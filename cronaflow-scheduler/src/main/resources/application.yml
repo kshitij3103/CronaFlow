@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cronaflow-scheduler
+
+  # MongoDB Configuration
+  mongodb:
+    uri: mongodb://localhost:27017/cronaflow
+    database: cronaflow
+
+  # Redis Configuration
+  data:
+    redis:
+      host: localhost
+      port: 6379
