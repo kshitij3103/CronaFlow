@@ -6,10 +6,12 @@ import lombok.Data;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Data
 public class TaskRequest {
+    private String taskId;
     @NotBlank(message = "Task Type cannot be blank")
     private String taskType;
 
@@ -20,6 +22,7 @@ public class TaskRequest {
 
 
     private Integer maxRetries;
+    private List<String> dependsOnTaskIds; // The IDs of the tasks this task depends on
 
 
 }

@@ -6,6 +6,6 @@ public enum TaskStatus {
     IN_PROGRESS,  // A worker picked it up and is executing it
     COMPLETED,    // Worker finished it successfully
     FAILED,       // Worker failed, but might retry
-    DEAD_LETTER   // Worker failed too many times, needs human review
-
+    DEAD_LETTER,
+    WAITING      // Task is waiting for a parent task to complete
 }

@@ -37,7 +37,7 @@ public class PollerService {
                         "taskType" , task.getTaskType()
 
                 )).withStreamKey("cronaflow:task:stream");
-                stringRedisTemplate.opsForStream().add(record);
+             stringRedisTemplate.opsForStream().add(record);
                 log.info("Successfully pushed task {} to Redis Stream",task.getId());
             }
 

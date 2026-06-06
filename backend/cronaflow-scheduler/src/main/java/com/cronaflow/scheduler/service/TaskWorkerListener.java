@@ -11,6 +11,7 @@ import org.springframework.data.redis.stream.StreamListener;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -45,6 +46,28 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
             task.setStatus(TaskStatus.COMPLETED);
             task.setUpdatedAt(Instant.now());
             taskRepository.save(task);
+
+
+
+            List<Task> dependents = taskRepository.findByDependsOnTaskIdsAndStatus(task.getId(),TaskStatus.WAITING);
+            if(!dependents.isEmpty()){
+                for(Task dependent:dependents){
+                    List<String> parentIds = dependent.getDependsOnTaskIds();
+                    long completedParentsCount = taskRepository.countByIdInAndStatus(parentIds,TaskStatus.COMPLETED);
+                    if(completedParentsCount==parentIds.size()){
+                        log.info("All dependencies met. Unlocking Dependent Task: {}", dependent.getId());
+                        dependent.setStatus(TaskStatus.PENDING);
+                        dependent.setUpdatedAt(Instant.now());
+                        taskRepository.save(dependent);
+
+                    }
+                    else{
+                        log.info("Dependent Task {} is still waiting. Completed parents: {}/{}",
+                                dependent.getId(), completedParentsCount, parentIds.size());
+
+                    }
+                }
+            }
 
             redisTemplate.opsForStream().acknowledge(STREAM_KEY,GROUP_NAME,record.getId());
             log.info("Successfully executed task and acknowledged {}",task.getId());
