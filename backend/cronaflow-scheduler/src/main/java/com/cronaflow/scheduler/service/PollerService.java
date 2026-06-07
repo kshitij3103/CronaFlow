@@ -20,14 +20,21 @@ import java.util.Map;
 public class PollerService {
     private final TaskRepository taskRepository;
     private final StringRedisTemplate stringRedisTemplate;
+    private final LeaderElectionService  leaderElectionService;
+    private final RateLimiterService rateLimiterService;
 
     @Scheduled(fixedRate = 1000)
     public void pollTasks(){
+        if(!leaderElectionService.isLeader())return ;
         List<Task> dueTasks= taskRepository.findByStatusAndExecuteAtLessThanEqual(
                 TaskStatus.PENDING, Instant.now());
         if(!dueTasks.isEmpty()){
             log.info("found {} due tasks to schedule",dueTasks.size());
             for(Task task:dueTasks){
+                if(!rateLimiterService.isAllowed(task.getTaskType())) {
+                    log.warn("Rate limit hit for type {}. Skipping task {}", task.getTaskType(), task.getId());
+                    continue; // Leaves the task PENDING in Mongo.
+                }
                 log.info("queuing {} taks | type:{}",task.getId(),task.getTaskType());
                 task.setStatus(TaskStatus.QUEUED);
                 task.setUpdatedAt(Instant.now());

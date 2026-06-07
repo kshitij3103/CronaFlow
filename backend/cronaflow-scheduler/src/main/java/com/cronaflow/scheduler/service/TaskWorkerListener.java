@@ -5,15 +5,19 @@ import com.cronaflow.scheduler.domain.TaskStatus;
 import com.cronaflow.scheduler.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.domain.Range;
+import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.stream.StreamListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -24,6 +28,7 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
 
     private final TaskRepository taskRepository;
     private final StringRedisTemplate redisTemplate;
+    private final LeaderElectionService leaderElectionService;
 
 
     @Override
@@ -42,7 +47,7 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
         Task task = taskOpt.get();
         try{
             log.info("Executing task :{} | Payload: {}",task.getId(),task.getPayload());
-            Thread.sleep(1000);
+            Thread.sleep(15000);
             task.setStatus(TaskStatus.COMPLETED);
             task.setUpdatedAt(Instant.now());
             taskRepository.save(task);
@@ -76,5 +81,52 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
             throw new RuntimeException("Task execution failed",e);
         }
 
+    }
+    @Scheduled(fixedRate = 60000)
+    public void rescueAbandonedTasks(){
+        if(!leaderElectionService.isLeader()) return;
+        PendingMessagesSummary pendingMessagesSummary =
+                redisTemplate.opsForStream().pending(STREAM_KEY,GROUP_NAME);
+        if(pendingMessagesSummary==null || pendingMessagesSummary.getTotalPendingMessages()==0){
+            return ;
+        }
+        PendingMessages pendingMessages = redisTemplate.opsForStream()
+                .pending(
+                        STREAM_KEY,
+                        GROUP_NAME,
+                        Range.unbounded(),
+                        100
+                );
+
+        for(PendingMessage message : pendingMessages){
+            long elapsedMinutes = message.getElapsedTimeSinceLastDelivery().toMinutes();
+            if(elapsedMinutes>=2){
+                log.warn(" Found abandoned task in PEL (idle for {} min). Stealing ownership...", elapsedMinutes);
+
+                List<MapRecord<String,Object,Object>> claimedMessages =
+                        redisTemplate.opsForStream().claim(
+                                STREAM_KEY,
+                                GROUP_NAME,
+                                "leader-rescuer",
+                                Duration.ofMinutes(2),
+                                message.getId()
+                        );
+                for(MapRecord<String,Object,Object> claimed:claimedMessages){
+                    MapRecord<String,String,String> stringRecord =
+                            StreamRecords.string(
+                                    claimed.getValue().entrySet().stream()
+                                            .collect(Collectors.toMap(
+                                                    e-> String.valueOf(e.getKey()),
+                                                    e-> String.valueOf(e.getValue())
+                                            ))
+
+                            ).withStreamKey(claimed.getStream()).withId(claimed.getId());
+                    onMessage(stringRecord);
+
+                }
+
+            }
+
+        }
     }
 }

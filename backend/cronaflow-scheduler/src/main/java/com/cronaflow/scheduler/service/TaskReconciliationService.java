@@ -17,9 +17,11 @@ import java.util.List;
 @Service
 public class TaskReconciliationService {
     private final TaskRepository taskRepository;
+    private final LeaderElectionService leaderElectionService;
 
     @Scheduled(fixedRate = 60000)
     public void recoverTasks() {
+        if(!leaderElectionService.isLeader()) return ;
         Instant fiveMinutesAgo = Instant.now().minus(5, ChronoUnit.MINUTES);
         List<Task> stuckTasks = taskRepository.findByStatusAndUpdatedAtLessThan(TaskStatus.QUEUED, fiveMinutesAgo);
         if(!stuckTasks.isEmpty()) {
