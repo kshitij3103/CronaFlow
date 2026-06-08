@@ -29,6 +29,7 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
     private final TaskRepository taskRepository;
     private final StringRedisTemplate redisTemplate;
     private final LeaderElectionService leaderElectionService;
+    private final EmailService emailService;
 
 
     @Override
@@ -47,7 +48,30 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
         Task task = taskOpt.get();
         try{
             log.info("Executing task :{} | Payload: {}",task.getId(),task.getPayload());
-            Thread.sleep(15000);
+            
+            // === REAL TASK EXECUTION ===
+            switch (task.getTaskType()) {
+                case "SEND_EMAIL":
+                    String toEmail = (String) task.getPayload().get("email");
+                    String subject = (String) task.getPayload().get("subject");
+                    String body = (String) task.getPayload().get("body");
+                    
+                    log.info(" Handing off to EmailService for: {}", toEmail);
+                    emailService.sendEmail(toEmail, subject, body);
+                    break;
+                    
+                case "PAYMENT_PROCESS":
+                    log.info("💳 Charging credit card...");
+                    if (task.getPayload() != null && task.getPayload().containsKey("throwError")) {
+                        throw new RuntimeException("Card declined! Insufficient funds.");
+                    }
+                    Thread.sleep(500); // Simulate fast payment gateway
+                    break;
+                    
+                default:
+                    log.warn("Unknown task type: {}", task.getTaskType());
+            }
+
             task.setStatus(TaskStatus.COMPLETED);
             task.setUpdatedAt(Instant.now());
             taskRepository.save(task);
@@ -78,7 +102,23 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
             log.info("Successfully executed task and acknowledged {}",task.getId());
         } catch (Exception e) {
             log.error("Failed to execute task {}",task.getId(),e);
-            throw new RuntimeException("Task execution failed",e);
+            task.setCurrentRetries(task.getCurrentRetries()+1);
+            task.setLastErrorMsg(e.getMessage());
+            task.setUpdatedAt(Instant.now());
+
+            if(task.getCurrentRetries()>=task.getMaxRetries()){
+                log.error(" Task {} has exhausted all retries. MOVED to DLQ (FAILED).", task.getId());
+                task.setStatus(TaskStatus.FAILED);
+
+            }
+            else{
+                log.warn(" Retrying task {} (Attempt {}/{}). Scheduling for 30s from now...",
+                        task.getId(), task.getCurrentRetries(), task.getMaxRetries());
+                task.setStatus(TaskStatus.PENDING);
+                task.setExecuteAt(Instant.now().plusSeconds(30));
+            }
+            taskRepository.save(task);
+            redisTemplate.opsForStream().acknowledge(STREAM_KEY,GROUP_NAME,record.getId());
         }
 
     }
