@@ -1,6 +1,6 @@
 # CronaFlow - Resilient Distributed Task Scheduler
 
-CronaFlow is a highly resilient, full-stack distributed task scheduling engine designed to manage, persist, and execute asynchronous background workloads. Engineered with a decentralized polling architecture, CronaFlow guarantees at-least-once execution semantics for arbitrary jobs, API polling, and scheduled integrations (such as the built-in LeetCode GraphQL scraper).
+CronaFlow is a full-stack background task scheduler built with Spring Boot and React. It provides a reliable way to schedule, persist, and execute asynchronous tasks, such as sending emails or fetching external APIs. Built as a distributed system, CronaFlow stores its queue in a database and uses Redis for leader election. This allows you to deploy multiple worker nodes safely—if the active server goes down, a standby node seamlessly takes over to ensure no tasks are ever lost. It also features a built-in integration to automatically schedule email reminders for upcoming LeetCode contests.
 
 ---
 
@@ -22,10 +22,10 @@ CronaFlow implements a Database-Backed Distributed Polling Architecture to achie
 
 1. **Task Ingestion:** The client layer submits asynchronous task definitions via the REST API. The payload is serialized into JSON and persisted into a central NoSQL document database (MongoDB).
 2. **Persistence Layer:** The database acts as the central source of truth, storing state transitions, raw payloads, execution timestamps, and retry counters.
-3. **Decentralized Worker Nodes:** Spring Boot instances operate as independent worker nodes. Each node runs background threads (via `@Scheduled` and `TaskExecutor`) that actively poll the database for eligible tasks (`executeAt <= NOW() && status == PENDING`).
-4. **Execution and Acknowledgment:** Upon acquiring a task, the worker locks the record, invokes the corresponding business logic handler (e.g., SMTP dispatch or WebClient HTTP requests), and synchronously updates the state machine to `COMPLETED` or `FAILED`.
+3. **Leader Election:** To prevent race conditions, CronaFlow utilizes an Active-Passive (Leader-Follower) architecture backed by Redis locks (`cronaflow:leader:lock`).
+4. **Execution and Acknowledgment:** Only the designated **Leader** node actively polls the database and executes tasks. If the Leader instance crashes or goes offline, its Redis lock expires, and a standby Follower node automatically promotes itself to the new Leader and takes over task execution.
 
-Because state is decoupled from the application memory, the system scales horizontally. Multiple nodes can poll concurrently without duplicating work, provided isolation levels and database-level locking are maintained.
+Because state is decoupled from the application memory, the system is incredibly fault-tolerant. Multiple nodes can be deployed, and the Redis Leader Election guarantees exactly-once execution semantics without the need for complex, database-level row locking.
 
 ---
 
