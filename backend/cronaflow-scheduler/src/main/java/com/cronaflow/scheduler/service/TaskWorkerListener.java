@@ -30,6 +30,8 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
     private final StringRedisTemplate redisTemplate;
     private final LeaderElectionService leaderElectionService;
     private final EmailService emailService;
+    private final LeetcodeService leetCodeService;
+    private final AiService aiService;
 
 
     @Override
@@ -59,6 +61,21 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
                     log.info(" Handing off to EmailService for: {}", toEmail);
                     emailService.sendEmail(toEmail, subject, body);
                     break;
+                case "LEETCODE_CONTEST":
+                    String userEmail = (String) task.getPayload().get("email");
+
+                    // Check if testMode was passed in the JSON, default to false if missing
+                    boolean testMode = task.getPayload().containsKey("testMode")
+                            && (Boolean) task.getPayload().get("testMode");
+
+                    log.info("🚀 Handing off to LeetCodeService to schedule reminder for {}", userEmail);
+                    leetCodeService.scheduleContestReminder(userEmail, testMode);
+                    break;
+
+                case "AI_SUMMARY":
+                    log.info(" Handing off to AiService...");
+                    aiService.generateSummary(task);
+                    break;
                     
                 case "PAYMENT_PROCESS":
                     log.info("💳 Charging credit card...");
@@ -70,6 +87,24 @@ public class TaskWorkerListener implements StreamListener<String, MapRecord<Stri
                     
                 default:
                     log.warn("Unknown task type: {}", task.getTaskType());
+            }
+
+            // --- UNIVERSAL NOTIFICATION CHECK ---
+            if (task.getPayload() != null && 
+                task.getPayload().containsKey("emailNotification") && 
+                Boolean.TRUE.equals(task.getPayload().get("emailNotification"))) {
+                
+                String targetEmail = (String) task.getPayload().get("targetEmail");
+                if (targetEmail != null) {
+                    String subject = "CronaFlow: Task Completed [" + task.getTaskType() + "]";
+                    String body = "Hello,\n\nYour scheduled task has finished executing successfully.\n\n" +
+                                  "Task ID: " + task.getId() + "\n" +
+                                  "Type: " + task.getTaskType() + "\n\n" +
+                                  "Best,\nCronaFlow Scheduler";
+                    
+                    log.info("📧 Sending completion notification email to {}", targetEmail);
+                    emailService.sendEmail(targetEmail, subject, body);
+                }
             }
 
             task.setStatus(TaskStatus.COMPLETED);

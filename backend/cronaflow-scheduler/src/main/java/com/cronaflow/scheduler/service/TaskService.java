@@ -66,5 +66,16 @@ public class TaskService {
         return taskRepository.save(task);
 
     }
+    public List<Task> getAllTasks() {
+        return taskRepository.findAll();
+    }
+
+    public void deleteAllTasks() {
+        taskRepository.deleteAll();
+    }
+
+    public void deleteTaskById(String id) {
+        taskRepository.deleteById(id);
+    }
 
 }

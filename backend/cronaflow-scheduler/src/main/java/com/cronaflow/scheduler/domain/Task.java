@@ -20,6 +20,7 @@ public class Task {
     private Map<String,Object> payload;
     private Instant executeAt;
     private TaskStatus status;
+    private String result;
     private int maxRetries;
     private int currentRetries;
     private List<String> dependsOnTaskIds; // The IDs of the tasks this task depends on
